@@ -11,18 +11,27 @@
 #include <linux/uaccess.h>
 
 #define I2C_CLIENT_NAME "CLIENT_ADC"
-#define I2C_CLIENT_ADDR 0x48
+#define I2C_CLIENT_ADDR 0x91	// A1 & A0 pins set to GND
 
 static struct i2c_adapter  *i2c_client_adapter = NULL;
-static struct i2c_client      *i2c_client_device   = NULL;
+static struct i2c_client      *i2c_client_device  = NULL;
 
-const char INIT_ADC_CONVERSION_MESSAGE              = 0x8c; // Message that initiates conversion for ADC 12 Click component
+/* turns on the A/D converter and begins conversions 
+ *   SD - 1 (Single Ended Input)
+ *   C2-C0 - 000 (CH0 Selected)
+ *   PD1-PD0 - 11 (Internal Reference ON and A/D Converter ON)
+ */
+const char INIT_ADC_CONVERSION_MESSAGE               = 0x8c;
+
+/* turns off the A/D 
+ *   C2-C0 - 000
+ *   PD1-PD0 - 00 (Power Down Between A/D Converter Conversions)
+ */
 const char SHUTDOWN_ADC_CONVERSION_MESSAGE = 0x80;
 
 int adc_driver_major; 
-/* Buffer holding data from ADC. This is digital voltage value converted by our ADC
- * from analog IR Distance Sensor output (OUT)
-*/
+
+/*  Each 12-bit data word is returned in two bytes */
 char digital_voltage_value[2];
 
 /* Function called when the slave has been found. */
@@ -46,7 +55,7 @@ static struct i2c_driver   driver = {
         .name   = I2C_CLIENT_NAME,
         .owner  = THIS_MODULE,
     },
-    .probe         = driver_probe,                // @probe:     Callback for device binding. Function called when the slave has been found
+    .probe         = driver_probe,               // @probe:     Callback for device binding. Function called when the slave has been found
     .remove      = driver_remove, 	          // @remove:  Callback for device unbinding. Function called when the slave has been removed
     .id_table      = supported_devices,    // @id_table:  List of I2C devices supported by this driver
 };
@@ -76,55 +85,52 @@ static ssize_t etx_write(struct file *filp, const char *buf, size_t len, loff_t 
     return 0;
 }
 
-/* This fuction will be called when we read the Device file 
- * Funkcija etx_read u ovoj formi će biti pozvana pri svakom čitanju Device fajla i 
- * izvršiće novu I2C komunikaciju sa IR Distance Click senzorom, osiguravajući da podaci 
- * budu sveži. Ne zavisimo od vrednosti *f_pos, tako da se operacija čitanja može izvesti
- * svaki put bez problema.
- */
+/* This fuction will be called when we read the Device file */
 static ssize_t etx_read(struct file *filp, char *buf, size_t len, loff_t *f_pos)
 {
-    int data_size = 2;
+    /* Size of valid data in gpio_driver - data to send in user space. */
+    int data_size = 0;
 
     if (*f_pos == 0)
     {
+		
+		/* Get size of valid data. */
+		data_size = strlen(digital_voltage_value);
+		
 		/* Slanje poruke za pokretanje ADC konverzije */
         i2c_master_send(i2c_client_device, &INIT_ADC_CONVERSION_MESSAGE, 1);
 		
 		/* Citanje podataka sa senzora (I2C klijenta) u 2B buffer*/
         i2c_master_recv(i2c_client_device, digital_voltage_value, data_size);
 		
-		/* Proveravamo da li ima dovoljno prostora u korisničkom baferu
-		if (len < data_size)
-		{
-			return -EINVAL;  // Nedovoljan prostor u baferu
-		}
-		*/
-		
 		/* Kopiramo podatke iz kernela u korisnički prostor */		
 		if (copy_to_user(buf, digital_voltage_value, data_size) != 0)
 		{
-			return -EFAULT;  // Greška prilikom kopiranja podataka
-		}
-	
-		/*Resetujemo *f_pos na 0 pri svakom čitanju. Ovo omogućava da se funkcija etx_read 
-		 * može pozivati neograničeno puta, jer ne zavisimo od pozicije u "datoteci" (*f_pos). 
-		*/
-		*f_pos = 0;								
-        return data_size;
+            return -EFAULT;
+        }
+        else
+        {
+            (*f_pos) += data_size;
+            printk(KERN_INFO "Data_size %d\n", data_size);
+            *f_pos = 0;
+            return data_size;
         }
     }
-    
-	return 0;
+    else
+    {
+		printk(KERN_INFO "*f_pos = %lld\n", *f_pos)
+        return 0;
+    }
 }
 
+/* Structure that declares the usual file access functions. */
 static struct file_operations adc_fops =
 {
     .owner      = THIS_MODULE,
     .read         = etx_read,			// called when we read   the Device file
     .write         = etx_write, 			// called when we write   the Device file 
     .open        = etx_open,			// called when we open  the Device file
-    .release     = etx_release,       // called when we close the Device file
+    .release    = etx_release,       // called when we close the Device file
 };
 
 
@@ -167,10 +173,11 @@ static int      __init etx_driver_init(void)
 /* Module exit function */
 static void __exit etx_driver_exit(void)
 {
+	printk(KERN_INFO "Removing adc_driver module\n");
+		
 	unregister_chrdev(adc_driver_major, "adc_driver"); // uklanjanje char uredjaja
 	i2c_unregister_device(i2c_client_device);  // device destroy
 	i2c_del_driver(&driver);
-	// i2c_del_adapter(i2c_client_adapter);
 }
 
 module_init(etx_driver_init);
