@@ -11,7 +11,7 @@
 #include <linux/uaccess.h>
 
 #define I2C_CLIENT_NAME "CLIENT_ADC"
-#define I2C_CLIENT_ADDR 0x91	// A1 & A0 pins set to GND
+#define I2C_CLIENT_ADDR 0x48	// A1 & A0 pins set to GND
 
 static struct i2c_adapter  *i2c_client_adapter = NULL;
 static struct i2c_client      *i2c_client_device  = NULL;

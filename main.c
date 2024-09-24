@@ -14,21 +14,22 @@
 /* Char buffer holding messages for LED drvier */
 #define BUF_LEN 20
 const char* message_for_YELLOW_LED = "YELLOW";
-const char* message_for_GREEN_LED   = "GREEN";
-const char* message_for_RED_LED        = "RED";
+const char* message_for_GREEN_LED  = "GREEN";
+const char* message_for_RED_LED    = "RED";
+const char* message_for_BUZZER     = "10";
 
  /* Mutex controlling servo movement critical section */
 static pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
 
 /* Flag to indicate when sensor has detected an object, used to restart the semaphore */
 volatile uint8_t door_opened = 0x00;
-volatile uint8_t cancel_timer = 0x00;
-volatile uint8_t time_is_up    = 0x00;
+volatile uint8_t cancel_timer= 0x00;
+volatile uint8_t time_is_up  = 0x00;
 
 /* Paths to char driver files */
-const char* LED_DRIVER     = "/dev/led_driver";
+const char* LED_DRIVER   = "/dev/led_driver";
 const char* BUZZ_DRIVER  = "/dev/buzz_driver";
-const char* ADC_DRIVER    = "/dev/adc_driver";
+const char* ADC_DRIVER   = "/dev/adc_driver";
 
 /* File descriptors for all driver files after opening */
 int led_fd, buzz_fd, adc_fd;
@@ -131,6 +132,8 @@ int main(void)
 				}
 			}
 			
+			if (time_is_up == 0xff)
+			    write(buzz_fd, message_for_BUZZER, strlen(message_for_BUZZER));
 			if (cancel_timer == 0xff || time_is_up == 0xff) 
 				break;
 		}
@@ -144,9 +147,9 @@ int main(void)
 
 int open_drivers(void)
 {
-    led_fd    = open(LED_DRIVER, O_RDWR);
+    led_fd  = open(LED_DRIVER, O_RDWR);
     buzz_fd = open(BUZZ_DRIVER, O_RDWR);
-    adc_fd   = open(ADC_DRIVER, O_RDWR);
+    adc_fd  = open(ADC_DRIVER, O_RDWR);
 	
     if ( led_fd < 0 || buzz_fd < 0 || adc_fd < 0)
 	{
