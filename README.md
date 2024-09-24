@@ -10,6 +10,7 @@ Datasheets 📄:
 
 BCM2837 Datasheet : https://www.alldatasheet.com/datasheet-pdf/pdf/1572343/BOARDCOM/BCM2837.html <br />
 ADC 12 Click Mikroe : https://www.mikroe.com/adc-12-click?srsltid=AfmBOopHdVjXTjusoUrr0BsAWu4COvaQ-Fox8xVBRag2l970xT6AKSI3
-Raspberry Pi Camera Rev 1.3 : https://www.raspberrypi.com/documentation/accessories/camera.html
+Raspberry Pi Camera Rev 1.3 : https://www.raspberrypi.com/documentation/accessories/camera.html (hardware)
+                              https://www.raspberrypi.com/documentation/computers/camera_software.html (software)
 
 Guide for setting up camera : https://community.element14.com/products/devtools/technicallibrary/m/files/16122
