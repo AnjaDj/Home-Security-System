@@ -2,18 +2,13 @@
 #include <linux/module.h>
 #include <linux/kdev_t.h>
 #include <linux/fs.h>
-#include <linux/cdev.h>
-#include <linux/device.h>
-#include <linux/init.h>
-#include <linux/slab.h>
 #include <linux/i2c.h>
-#include <linux/delay.h>
-#include <linux/uaccess.h>
+#include <stddef.h>
 
 #define I2C_CLIENT_NAME "CLIENT_ADC"
 #define I2C_CLIENT_ADDR 0x48	// A1 & A0 pins set to GND
 
-static struct i2c_adapter  *i2c_client_adapter = NULL;
+static struct i2c_adapter  *i2c_client_adapter =  NULL;
 static struct i2c_client      *i2c_client_device  = NULL;
 
 /* turns on the A/D converter and begins conversions 

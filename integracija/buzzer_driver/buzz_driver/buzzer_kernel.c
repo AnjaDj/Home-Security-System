@@ -10,7 +10,6 @@
 #include <asm/uaccess.h>
 #include <linux/string.h>
 #include <linux/ioport.h>
-//#include <linux/ktime.h>
 #include <linux/time.h>
 #include <linux/hrtimer.h>
 #include <linux/interrupt.h>
