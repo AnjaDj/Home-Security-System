@@ -10,6 +10,7 @@
 #include <asm/uaccess.h>
 #include <linux/string.h>
 #include <linux/ioport.h>
+#include <linux/ktime.h>
 #include <linux/time.h>
 #include <linux/hrtimer.h>
 #include <linux/interrupt.h>
@@ -20,8 +21,6 @@
 #include <linux/signal.h>
 #include <linux/sched.h>
 #include <linux/unistd.h>
-
-
 
 #define BUZZER_PIN 21
 #define DURATION 1000 
@@ -184,6 +183,10 @@ int gpio_driver_major;
 /* Buffer to store data. */
 #define BUF_LEN 80
 char* gpio_driver_buffer;
+
+/* Timer */
+static struct hrtimer mytimer;
+static ktime_t kt;
 
 /* Virtual address where the physical GPIO address is mapped */
 void* virt_gpio_base;
@@ -401,6 +404,7 @@ char GetGpioPinValue(char pin)
     return (tmp >> pin);
 }
 
+enum hrtimer_restart timer_callback(struct hrtimer* timer);
 
 static int __init buzzer_driver_init()
 {
@@ -447,7 +451,10 @@ static int __init buzzer_driver_init()
     /* Initialize GPIO pins. */
     SetGpioPinDirection(GPIO_21, GPIO_DIRECTION_OUT);
     // gpio_direction_output(GPIO_21, 0);
-    buzz(10000);
+    
+    /* Initialize timer to a given clock */
+    hrtimer_init(&mytimer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+    mytimer.function = &timer_callback;
     
     return 0;
 
@@ -468,6 +475,7 @@ fail_no_mem:
 static void __exit buzzer_driver_exit(void) 
 {
     gpio_set_value(GPIO_21, 0);
+    hrtimer_cancel(&mytimer);
     // printk(KERN_INFO "Result exit: %d", result);
     ClearGpioPin(21);
     SetGpioPinDirection(GPIO_21, GPIO_DIRECTION_IN);
@@ -527,7 +535,7 @@ static ssize_t buzzer_driver_write(struct file *filp, const char __user *buf, si
         return -EFAULT;
     }
 
-    //buzz(duration);
+    buzz(100);
     return sizeof(int);
 }
 
@@ -540,8 +548,14 @@ static void buzz(int duration)
     {
         printk("U buzz funkciji smo.");
         SetGpioPin(GPIO_21);
-        msleep(period/2);
-        ClearGpioPin(GPIO_21);
-        msleep(period/2);
+        hrtimer_start(&mytimer, ktime_set(1,0), CLOCK_MONOTONIC);
     }
+}
+
+/* Timer callback, called with hrtimer_start  */
+enum hrtimer_restart timer_callback(struct hrtimer* timer)
+{
+    printk(KERN_INFO "hrtimer handler called!\n");
+    ClearGpioPin(GPIO_21);
+    return HRTIMER_NORESTART;
 }

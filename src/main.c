@@ -27,9 +27,9 @@ volatile uint8_t cancel_timer= 0x00;
 volatile uint8_t time_is_up  = 0x00;
 
 /* Paths to char driver files */
-const char* LED_DRIVER   = "/dev/led_driver";
-const char* BUZZ_DRIVER  = "/dev/buzzer_driver";
-const char* ADC_DRIVER   = "/dev/adc_driver";
+const char* LED_DRIVER   = "/dev/LED_driver";
+const char* BUZZ_DRIVER  = "/dev/BUZZ_driver";
+const char* ADC_DRIVER   = "/dev/ADC_driver";
 
 /* File descriptors for all driver files after opening */
 int led_fd, buzz_fd, adc_fd;
@@ -43,21 +43,27 @@ void kill_handler(int signo, siginfo_t *info, void *context);
 /*  Thread function reading data from ADC (sensor), comparing it to threshold value */
 void* sensor_run(void* arg)
 {
-    char data[2];
+    char data[4];
 	
-	/* Odgovara udaljenosti od priblizno 75 cm */
-	const uint16_t THRESHOLD = 0x0070;
+    
+    const uint32_t THRESHOLD =0x00000401;
 	
     while(1)
-	{
-        read(adc_fd, data, 2);
+    {
+        read(adc_fd, data, 4);
+	
+	usleep(50000);
+	
+	//printf("Reading data = %x %x %x %x\n", data[3],data[2],data[1],data[0]);
 		
-		uint16_t result_data = (data[1] << 8) | data[0];  // Kombinovanje dva bajta u 16-bitni rezultat
+	uint32_t result_data = data[3]<<24 | data[2]<<16 | data[1]<<8 | data[0] ; // Kombinovanje 4 bajta u 32-bitni rezultat
+	
+	printf("Result data = %x\n",result_data);
 
-        if(result_data < THRESHOLD)		// Detektovali smo otvaranje ulaznih vrata
-		{
+        if(result_data > THRESHOLD)		// Detektovali smo otvaranje ulaznih vrata
+	{
             door_opened = 0xff;
-			pthread_exit(NULL);
+	    pthread_exit(NULL);
         }
     }
 }
@@ -128,6 +134,7 @@ int main(void)
 					break;
 				}
 				else{	// Unesena neispravna sifra
+					write(buzz_fd, message_for_BUZZER, BUF_LEN);
 					write(led_fd, message_for_RED_LED, BUF_LEN);
 				}
 			}

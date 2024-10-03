@@ -19,14 +19,11 @@
 #include <linux/delay.h>
 #include <linux/signal.h>
 #include <linux/sched.h>
-#include <stdint.h> 
-/*#include <stdio.h>
-#include <unistd.h>
-#include <termios.h>
-#include <fcntl.h>*/
-
 
 MODULE_LICENSE("Dual BSD/GPL");
+MODULE_AUTHOR("Ana V.");
+MODULE_DESCRIPTION("LED Driver");
+MODULE_VERSION("1.0");
 
 /* NOTE: Check Broadcom BCM2835 datasheet, page 90 and pages 5-7
  *
@@ -42,7 +39,7 @@ MODULE_LICENSE("Dual BSD/GPL");
 #define GPIO_ADDR_SPACE_LEN (0xB4)
 //--
 
-//Handle GPIO: 0-9
+// Handle GPIO: 0-9
 /* GPIO Function Select 0. */
 #define GPFSEL0_OFFSET (0x00000000)
 
@@ -153,8 +150,7 @@ typedef enum {
 #define GPIO_27 (27)
 
 /* Declaration of gpio_driver.c functions */
-
-int gpio_driver_init(void);
+int  gpio_driver_init(void);
 void gpio_driver_exit(void);
 static int gpio_driver_open(struct inode *, struct file *);
 static int gpio_driver_release(struct inode *, struct file *);
@@ -187,6 +183,9 @@ char* gpio_driver_buffer;
 /* Virtual address where the physical GPIO address is mapped */
 void* virt_gpio_base;
 
+/* Timer */
+static struct hrtimer mytimer;
+static ktime_t kt;
 
 /*
  * GetGPFSELReg function
@@ -400,6 +399,30 @@ char GetGpioPinValue(char pin)
 
     return (tmp >> pin);
 }
+
+char* flag = NULL;
+
+/* Timer callback, called with hrtimer_start  */
+enum hrtimer_restart timer_callback(struct hrtimer* timer)
+{
+    printk(KERN_INFO "hrtimer handler called!\n");
+    //printk(KERN_INFO "flag : %s", flag);
+    if (strcmp(flag,"YELLOW")==0){
+        printk(KERN_INFO "YELLOW LED (GPIO_06) ON\n");
+        ClearGpioPin(GPIO_06);
+    }
+    else if (strcmp(flag,"GREEN")==0){
+        printk(KERN_INFO "GREEN LED (GPIO_13) ON\n");
+        ClearGpioPin(GPIO_13);
+    }
+    else if(strcmp(flag,"RED")==0){
+        printk(KERN_INFO "RED LED (GPIO_19) ON\n");
+        ClearGpioPin(GPIO_19);
+    }
+    kfree(flag);
+    return HRTIMER_NORESTART;
+}
+
 /*
  * Initialization:
  *  1. Register device driver
@@ -450,16 +473,9 @@ int gpio_driver_init(void)
 	SetGpioPinDirection(GPIO_13, GPIO_DIRECTION_OUT); //LED1[GREEN DIODE]
 	SetGpioPinDirection(GPIO_19, GPIO_DIRECTION_OUT); //LED2[RED DIODE]
     
-    int i=0;
-    /*while(i<=10)
-    {
-        
-        printk(KERN_INFO "GetGpioPinValue(GPIO_04) %d\n",GetGpioPinValue(GPIO_04));
-        printk(KERN_INFO "GetGPioPInValue(GPIO_16) %d\n",GetGpioPinValue(GPIO_16));
-        printk(KERN_INFO "GetGpioPinValue(GPIO_20) %d\n",GetGpioPinValue(GPIO_20));
-        i++;
-        msleep(1000);
-    }*/
+    /* Initialize timer to a given clock */
+    hrtimer_init(&mytimer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+    mytimer.function = &timer_callback;
     
     return 0;
 
@@ -494,6 +510,8 @@ fail_no_mem:
 void gpio_driver_exit(void)
 {
     printk(KERN_INFO "Removing gpio_driver module\n");
+    
+    hrtimer_cancel(&mytimer);
 
     /* Clear GPIO pins. */
     ClearGpioPin(GPIO_06);
@@ -601,43 +619,42 @@ static ssize_t gpio_driver_write(struct file *filp, const char *buf, size_t len,
 {
     /* Reset memory. */
     memset(gpio_driver_buffer, 0, BUF_LEN);
-	/*if(len > sizeof(gpio_driver_buffer)-1)
-	{
-		printk(KERN_ALERT "Input too long. Len = %d,sizeof(gpio_driver_buffer)-1 = %d\n",len,sizeof(gpio_driver_buffer)-1);
-		return -EINVAL;
-	}*/
-    /* Get data from user space.*/
+
     if (copy_from_user(gpio_driver_buffer, buf, len) != 0)
     {
         return -EFAULT;
     }
     else
     {
-	
 		printk(KERN_INFO "[gpio_driver_write] gpio_driver_buffer - %s", gpio_driver_buffer);
 		
 		if(strncmp(gpio_driver_buffer,"YELLOW",6) == 0)
 		{	
-			SetGpioPin(GPIO_06);
 			printk(KERN_INFO "YELLOW LED (GPIO_06) ON\n");
-			msleep(5000);
-			ClearGpioPin(GPIO_06);
-			
-		}else if(strncmp(gpio_driver_buffer,"GREEN",5) == 0)
+            flag = kzalloc(7,GFP_KERNEL);
+            strncpy(flag,gpio_driver_buffer,6);
+            SetGpioPin(GPIO_06);
+			hrtimer_start(&mytimer, ktime_set(2,0), CLOCK_MONOTONIC);
+		}
+        else if(strncmp(gpio_driver_buffer,"GREEN",5) == 0)
 		{
-			SetGpioPin(GPIO_13);
 			printk(KERN_INFO "GREEN LED (GPIO_13) ON\n");
-			msleep(5000);
-			ClearGpioPin(GPIO_13);
-			
-		}else if(strncmp(gpio_driver_buffer,"RED",3) == 0)
+            flag = kzalloc(6, GFP_KERNEL);
+            strncpy(flag,gpio_driver_buffer,5);
+            SetGpioPin(GPIO_13);
+			hrtimer_start(&mytimer, ktime_set(2,0), CLOCK_MONOTONIC);
+		}
+        else if(strncmp(gpio_driver_buffer,"RED",3) == 0)
 		{
-			SetGpioPin(GPIO_19);
 			printk(KERN_INFO "RED LED (GPIO_19) ON\n");
-			msleep(5000);
-			ClearGpioPin(GPIO_19);
-			
-		}else{
+            printk(KERN_INFO "gpio_driver_buffer : %s", gpio_driver_buffer);
+            flag = kzalloc(4, GFP_KERNEL);
+            strncpy(flag,gpio_driver_buffer,3);
+            printk(KERN_INFO "flag : %s", flag);
+            SetGpioPin(GPIO_19);
+			hrtimer_start(&mytimer, ktime_set(2,0), CLOCK_MONOTONIC);
+		}
+        else{
 			printk(KERN_ALERT "Invalid command.\n");
 		}
 		
