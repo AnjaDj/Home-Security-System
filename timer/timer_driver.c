@@ -188,8 +188,10 @@ char* gpio_driver_buffer;
 static struct hrtimer countdown_timer;
 static ktime_t kt;
 static ktime_t ktime_period;
+/* stop or run timer */
 static int running = 0;
-static int finished = 0;
+/* flag to signalize that timer has finished, needed by user space application*/
+static int finished = 0; 
 
 /* Virtual address where the physical GPIO address is mapped */
 void* virt_gpio_base;
@@ -407,6 +409,7 @@ char GetGpioPinValue(char pin)
     return (tmp >> pin);
 }
 
+/* Function called when timer counts 30 seconds */
 static enum hrtimer_restart countdown_timer_callback(struct hrtimer *param)
 {
 	printk("Timer expired!");
@@ -522,6 +525,7 @@ static int timer_driver_release(struct inode *inode, struct file *filp)
  *   The gpio_driver_read function transfers data from the driver buffer (gpio_driver_buffer)
  *   to user space with the function copy_to_user.
  */
+ /* NOT IMPLEMENTED YET, JUST AN ,,PSEUDOCODE" */
 static ssize_t timer_driver_read(struct file *f_pos, char __user *buffer, size_t len, loff_t *offset) 
 {
     int data_size = 0;
