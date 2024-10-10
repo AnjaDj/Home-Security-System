@@ -17,7 +17,7 @@
 #include <asm/uaccess.h>
 
 MODULE_LICENSE("Dual BSD/GPL");
-MODULE_AUTHOR("Ana V.,Dejana S.,Anja Dj.");
+MODULE_AUTHOR("Ana V.");
 MODULE_DESCRIPTION("Timer Driver");
 MODULE_VERSION("2.0");
 
