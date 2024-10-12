@@ -7,33 +7,23 @@
 #include <linux/types.h>
 #include <linux/fcntl.h>
 #include <linux/proc_fs.h>
-#include <asm/uaccess.h>
 #include <linux/string.h>
 #include <linux/ioport.h>
-#include <linux/time.h>
+#include <linux/ktime.h>
 #include <linux/hrtimer.h>
+#include <asm/io.h>
 #include <linux/interrupt.h>
 #include <linux/gpio.h>
-#include <asm/io.h>
 #include <asm/uaccess.h>
-#include <linux/delay.h>
-#include <linux/signal.h>
-#include <linux/sched.h>
-#include <linux/unistd.h>
 
-
-
-#define TIMER_PIN 16
-#define DEVICE_NAME "timer"
-/* timer interval defined as (TIMER_SEC + TIMER_NANO_SEC) */
-#define TIMER_SEC    1
-#define TIMER_NANO_SEC 0 /* 1s */
-#define DURATION 30 /* 30s */
-
-MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Dejana S.");
+MODULE_LICENSE("Dual BSD/GPL");
+MODULE_AUTHOR("Ana V.");
 MODULE_DESCRIPTION("Timer Driver");
-MODULE_VERSION("1.0");
+MODULE_VERSION("2.0");
+
+// timer interval defined as (TIMER_SEC + TIMER_NANO_SEC)
+#define TIMER_SEC    1
+#define TIMER_NANO_SEC 0
 
 // NOTE: Check Broadcom BCM8325 datasheet, page 91+
 // NOTE: GPIO Base address is set to 0x7E200000,
@@ -153,27 +143,30 @@ typedef enum {GPIO_DIRECTION_IN = 0, GPIO_DIRECTION_OUT = 1} DIRECTION;
 #define GPIO_26 (26)
 #define GPIO_27 (27)
 
-/* Declaration of timer_driver.c functions */
+/* Declaration of gpio_driver.c functions */
+int gpio_driver_init(void);
+void gpio_driver_exit(void);
+static int gpio_driver_open(struct inode *, struct file *);
+static int gpio_driver_release(struct inode *, struct file *);
+static ssize_t gpio_driver_read(struct file *, char *buf, size_t , loff_t *);
+static ssize_t gpio_driver_write(struct file *, const char *buf, size_t , loff_t *);
 
-static int timer_driver_init(void);
-static void timer_driver_exit(void);
-static int timer_driver_open(struct inode *, struct file *);
-static int timer_driver_release(struct inode *, struct file *);
-static ssize_t timer_driver_read(struct file *, char *buf, size_t , loff_t *);
-static ssize_t timer_driver_write(struct file *, const char *buf, size_t , loff_t *);
-static int start_timer (void);
+void setStanjeDioda(int, unsigned int);
+void cetiriBita(unsigned int);
+void counter(int, int);
+
 /* Structure that declares the usual file access functions. */
-struct file_operations gpio_driver_fops = 
+struct file_operations gpio_driver_fops =
 {
-    .owner = THIS_MODULE,
-    .open = timer_driver_open,
-    .write = timer_driver_write,
-    .read = timer_driver_read,
+    open    :   gpio_driver_open,
+    release :   gpio_driver_release,
+    read    :   gpio_driver_read,
+    write   :   gpio_driver_write
 };
 
 /* Declaration of the init and exit functions. */
-module_init(timer_driver_init);
-module_exit(timer_driver_exit);
+module_init(gpio_driver_init);
+module_exit(gpio_driver_exit);
 
 /* Global variables of the driver */
 
@@ -184,14 +177,10 @@ int gpio_driver_major;
 #define BUF_LEN 80
 char* gpio_driver_buffer;
 
-/* countdown timer vars. */
-static struct hrtimer countdown_timer;
+/* Blink timer vars. */
+static struct hrtimer blink_timer;
 static ktime_t kt;
-static ktime_t ktime_period;
-/* stop or run timer */
-static int running = 0;
-/* flag to signalize that timer has finished, needed by user space application*/
-static int finished = 0; 
+static int vrijeme=30;
 
 /* Virtual address where the physical GPIO address is mapped */
 void* virt_gpio_base;
@@ -283,17 +272,17 @@ void SetInternalPullUpDown(char pin, PUD pull)
        to remove the current Pull-up/down). */
     iowrite32(pull, virt_gpio_base + gppud_offset);
 
-    /* Wait 150 cycles � this provides the required set-up time for the control signal */
+    /* Wait 150 cycles  this provides the required set-up time for the control signal */
 
     /* Write to GPPUDCLK0/1 to clock the control signal into the GPIO pads you wish to
-       modify � NOTE only the pads which receive a clock will be modified, all others will
+       modify  NOTE only the pads which receive a clock will be modified, all others will
        retain their previous state. */
     tmp = ioread32(virt_gpio_base + gppudclk_offset);
     mask = 0x1 << pin;
     tmp |= mask;
     iowrite32(tmp, virt_gpio_base + gppudclk_offset);
 
-    /* Wait 150 cycles � this provides the required hold time for the control signal */
+    /* Wait 150 cycles  this provides the required hold time for the control signal */
 
     /* Write to GPPUD to remove the control signal. */
     iowrite32(PULL_NONE, virt_gpio_base + gppud_offset);
@@ -409,38 +398,60 @@ char GetGpioPinValue(char pin)
     return (tmp >> pin);
 }
 
-/* Function called when timer counts 30 seconds */
-static enum hrtimer_restart countdown_timer_callback(struct hrtimer *param)
+// flag which indicates whether 30secs have expired or not
+static int time_expired = 0;
+static int running = 0;
+
+static enum hrtimer_restart blink_timer_callback(struct hrtimer *param)
 {
-	printk("Timer expired!");
-    hrtimer_forward_now(&countdown_timer, ktime_period);
-    running = 0;
-    finished = 1;
-	return HRTIMER_NORESTART;
+    if(running == 1){
+        if(vrijeme > 0) 
+        {
+            printk(KERN_INFO "Timer counting ... -> Seconds left: %d\n",vrijeme);
+            vrijeme--;
+            hrtimer_forward(&blink_timer, ktime_get(), kt);
+            return HRTIMER_RESTART;  
+        }
+        else if (vrijeme == 0) // 30secs have expired
+        {
+            running = 0;
+            time_expired = 1;
+            printk(KERN_INFO "30secs have expired.\n");
+            return HRTIMER_NORESTART;
+        }
+    }
+    
+    return HRTIMER_NORESTART;
 }
 
-static int __init timer_driver_init()
+/*
+ * Initialization:
+ *  1. Register device driver
+ *  2. Allocate buffer
+ *  3. Initialize buffer
+ *  4. Map GPIO Physical address space to virtual address
+ *  5. Initialize GPIO pins
+ *  6. Init and start the high resoultion timer
+ */
+ 
+ 
+int gpio_driver_init(void)
 {
     int result = -1;
 
-    printk(KERN_INFO "Inserting timer_driver module\n");
-
-    if (!gpio_is_valid(TIMER_PIN)) 
-    {
-        printk(KERN_ALERT "GPIO %d is not valid\n", TIMER_PIN);
-        return -1;
-    }
+    printk(KERN_INFO "Inserting gpio_driver module\n");
 
     /* Registering device. */
-    result = register_chrdev(0, "timer_driver", &gpio_driver_fops);
+    result = register_chrdev(0, "gpio_driver", &gpio_driver_fops);
     if (result < 0)
     {
-        printk(KERN_INFO "timer_driver: cannot obtain major number %d\n", gpio_driver_major);
+        printk(KERN_INFO "gpio_driver: cannot obtain major number %d\n", gpio_driver_major);
         return result;
     }
+    
 
     gpio_driver_major = result;
-    printk(KERN_INFO "timer_driver major number is %d\n", gpio_driver_major);
+    printk(KERN_INFO "gpio_driver major number is %d\n", gpio_driver_major);
 
     /* Allocating memory for the buffer. */
     gpio_driver_buffer = kmalloc(BUF_LEN, GFP_KERNEL);
@@ -460,16 +471,14 @@ static int __init timer_driver_init()
         result = -ENOMEM;
         goto fail_no_virt_mem;
     }
-    /*ktime_period = ktime_set(30, 0); /* 30 seconds 
-    hrtimer_init(&countdown_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
-    countdown_timer.function = &countdown_timer_callback;*/
-
-    /* Initialize GPIO pins. */
-    SetGpioPinDirection(GPIO_21, GPIO_DIRECTION_OUT); 
     
-    printk("Timer initialized.\n");
+    /* Initialize high resolution timer. */
+    hrtimer_init(&blink_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+    kt = ktime_set(TIMER_SEC, TIMER_NANO_SEC); // 1s
+    blink_timer.function = &blink_timer_callback;
+
     return 0;
-	
+
 fail_no_virt_mem:
     /* Freeing buffer gpio_driver_buffer. */
     if (gpio_driver_buffer)
@@ -478,36 +487,55 @@ fail_no_virt_mem:
     }
 fail_no_mem:
     /* Freeing the major number. */
-    unregister_chrdev(gpio_driver_major, "timer_driver");
-	
+    unregister_chrdev(gpio_driver_major, "gpio_driver");
+
     return result;
 }
 
-
-static void __exit timer_driver_exit(void) 
+/*
+ * Cleanup:
+ *  1. stop the timer
+ *  2. release GPIO pins (clear all outputs, set all as inputs and pull-none to minimize the power consumption)
+ *  3. Unmap GPIO Physical address space from virtual address
+ *  4. Free buffer
+ *  5. Unregister device driver
+ */
+void gpio_driver_exit(void)
 {
-    running = 0;
-    gpio_set_value(GPIO_16, 0);
-    ClearGpioPin(16);
-    SetGpioPinDirection(GPIO_16, GPIO_DIRECTION_IN);
-    gpio_free(TIMER_PIN);
-    unregister_chrdev(0, DEVICE_NAME);
-	 if (running) {
-        hrtimer_cancel(&countdown_timer);
-        printk(KERN_INFO "Timer stopped before completion.\n");
-    } else {
-        printk(KERN_INFO "Timer finished naturally.\n");
+    printk(KERN_INFO "Removing gpio_driver module\n");
+
+    /* Release high resolution timer. */
+    hrtimer_cancel(&blink_timer);
+    
+    /* Unmap GPIO Physical address space. */
+    if (virt_gpio_base)
+    {
+        iounmap(virt_gpio_base);
     }
+
+    /* Freeing buffer gpio_driver_buffer. */
+    if (gpio_driver_buffer)
+    {
+        kfree(gpio_driver_buffer);
+    }
+
+    /* Freeing the major number. */
+    unregister_chrdev(gpio_driver_major, "gpio_driver");
 }
 
 /* File open function. */
-static int timer_driver_open(struct inode *inode, struct file *file) 
+static int gpio_driver_open(struct inode *inode, struct file *filp)
 {
+    /* Initialize driver variables here. */
+
+    /* Reset the device here. */
+
+    /* Success. */
     return 0;
 }
 
 /* File close function. */
-static int timer_driver_release(struct inode *inode, struct file *filp)
+static int gpio_driver_release(struct inode *inode, struct file *filp)
 {
     /* Success. */
     return 0;
@@ -525,26 +553,41 @@ static int timer_driver_release(struct inode *inode, struct file *filp)
  *   The gpio_driver_read function transfers data from the driver buffer (gpio_driver_buffer)
  *   to user space with the function copy_to_user.
  */
- /* NOT IMPLEMENTED YET, JUST AN ,,PSEUDOCODE" */
-static ssize_t timer_driver_read(struct file *f_pos, char __user *buffer, size_t len, loff_t *offset) 
+static char status[1];
+static ssize_t gpio_driver_read(struct file *filp, char *buf, size_t len, loff_t *f_pos)
 {
-    int data_size = 0;
-
-    gpio_driver_buffer = finished;
-    
-    
-	/* Get size of valid data. */
-	data_size = strlen(gpio_driver_buffer);
-
+        /* 30secs have expired. Timer has counted down to 0 */
+        if (time_expired == 1)
+        {
+            //status[1] = 0x00000000;
+            status[0] = 0x00000000;
+            printk(KERN_INFO "Timer expired status: %s\n", status);
+        }
+        else if(running == 1 && vrijeme > 0) /* Timer still counting */
+        {
+            //status[1] = 0x00000000;
+            status[0] = 0x00000001;
+            printk(KERN_INFO "Timer is still counting. status: %s\n", status);
+        }
+        else if (running == 0 && vrijeme > 0) /* Timer is stopped by user. Timer hasnt exceeded 0. */
+        { 
+            //status[1] = 0x00000000;
+            status[0] = 0x00000010;
+            printk(KERN_INFO "Timer was interrupted by user. Timer hasnt exceeded zero. status: %s\n", status);
+        }
+        
+        /* Size of valid data in gpio_driver - data to send in user space. */
+        int data_size = 0;
+        
         /* Send data to user space. */
-        if (copy_to_user(buffer, gpio_driver_buffer, data_size) != 0)
+        if (copy_to_user(buf, status, 1) != 0)
         {
             return -EFAULT;
         }
         else
         {
-            //(*f_pos) = 0;
-
+            (*f_pos) += data_size;
+            *f_pos = 0;
             return data_size;
         }
 }
@@ -560,59 +603,44 @@ static ssize_t timer_driver_read(struct file *f_pos, char __user *buffer, size_t
  *  Operation:
  *   The function copy_from_user transfers the data from user space to kernel space.
  */
-static ssize_t timer_driver_write(struct file *filp, const char __user *buf, size_t len, loff_t *f_pos) 
+static ssize_t gpio_driver_write(struct file *filp, const char *buf, size_t len, loff_t *f_pos)
 {
-    char command[BUF_LEN];
-    if(len > BUF_LEN - 1)
-    {
-        len = BUF_LEN - 1;
-    }
-    if (copy_from_user(command, buf, len))
+    /* Reset memory. */
+    memset(gpio_driver_buffer, 0, BUF_LEN);
+
+    /* Get data from user space.*/
+    if (copy_from_user(gpio_driver_buffer, buf, len) != 0)
     {
         return -EFAULT;
     }
-    command[len] = '\0';
-    
-    if(strncmp(command, "start", 5) == 0)
-    {
-        start_timer();
-    }
     else
     {
-        printk("Invalid data.");
-        return 0;
+        printk(KERN_INFO "gpio_driver_buffer u write() : %s\n", gpio_driver_buffer);
+        
+        if(strcmp(gpio_driver_buffer,"start") == 0)
+        {
+            if(!running) // starts timer for the first time
+            {
+                vrijeme = 30;
+                running = 1;
+                printk(KERN_INFO "Timer has been started for the first time.\n");
+                hrtimer_start(&blink_timer, kt, HRTIMER_MODE_REL);
+            }
+            
+        }
+        else if(strcmp(gpio_driver_buffer, "stop")==0)
+        {
+            if(running) 
+            {
+                printk(KERN_INFO "User has stopped timer.\n");
+                running = 0; //STOP TIMER
+            }
+        }
+        else{
+            printk("Invalid data.");
+            return 0;
+        }
+            
+        return len;
     }
-	
-    return len;
 }
-
-/* Sysfs file - zaustavlja tajmer. */
-
-static ssize_t stop_timer(struct device *dev, struct device_attribute *attr, const char *buf, size_t count) 
-{
-    printk(KERN_INFO "Timer interrupted by user.\n");
-    running = false;
-    hrtimer_cancel(&countdown_timer); 
-    running = 0;
-    return count;
-}
-
-static int start_timer (void)
-{
-    if(running)
-    {
-        printk("Timer has already started.\n");
-        return -1;
-    }
-    
-    ktime_period = ktime_set(TIMER_SEC, TIMER_NANO_SEC);
-    hrtimer_init(&countdown_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
-    countdown_timer.function = &countdown_timer_callback;
-    
-    hrtimer_start(&countdown_timer,ktime_period, HRTIMER_MODE_REL);
-    
-    running = 1;
-    printk("Starting 30 sec timer.\n");
-    return 0;
-    }
-
