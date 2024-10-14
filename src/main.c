@@ -38,16 +38,6 @@
 
 #define PASSWORD "1234"
 #define BUF_LEN 20
-<<<<<<< HEAD
-
-const char* message_for_YELLOW_LED  = "YELLOW";
-const char* message_for_GREEN_LED   = "GREEN";
-const char* message_for_RED_LED     = "RED";
-const char* message_for_BUZZER      = "10";
-const char* message_for_TIMER_start = "start";
-const char* message_for_TIMER_stop  = "stop";
-=======
->>>>>>> ff383188ece03beee3e609089298645adbeec89a
 
 const char* message_for_YELLOW_LED  = "YELLOW";
 const char* message_for_GREEN_LED   = "GREEN";
@@ -66,39 +56,27 @@ const char* BUZZ_DRIVER  = "/dev/BUZZER_driver";
 const char* ADC_DRIVER   = "/dev/ADC_driver";
 const char* TIMER_DRIVER = "/dev/TIMER_driver";
 
-<<<<<<< HEAD
 /* File descriptors for all driver files after opening */
-=======
-/** File descriptors for all driver files after opening */
->>>>>>> ff383188ece03beee3e609089298645adbeec89a
 int led_fd, buzz_fd, adc_fd, timer_fd;
 
-/** Function that opens all device files and checks for errors */
+/* Function that opens all device files and checks for errors */
 int open_drivers(void);
 
-/** SIGINT handler function, closes driver files */
+/* SIGINT handler function, closes driver files */
 void kill_handler(int signo, siginfo_t *info, void *context);
 
-/**  Thread function reading data from ADC (sensor), comparing it to threshold value */
+/*  Thread function reading data from ADC (sensor), comparing it to threshold value */
 void* sensor_run(void* arg)
 {
     char data[4];
-<<<<<<< HEAD
-	
-    const uint32_t THRESHOLD =0x00000401;
-=======
     const uint32_t THRESHOLD = 0x00000401;
->>>>>>> ff383188ece03beee3e609089298645adbeec89a
 	
     while(1)
     {
         read(adc_fd, data, 4);
-<<<<<<< HEAD
 	
 	    usleep(50000);
-	
-	    /* printf("Reading data = %x %x %x %x\n", data[3],data[2],data[1],data[0]); */
-		
+			
 	    uint32_t result_data = data[3]<<24 | data[2]<<16 | data[1]<<8 | data[0] ; /* Kombinovanje 4 bajta u 32-bitni rezultat */
 	
 	    printf("Data from distance sensor = %x\n",result_data);
@@ -107,7 +85,7 @@ void* sensor_run(void* arg)
 	        {
                 door_opened = 0xff;
 	            pthread_exit(NULL);
-                }
+            }
     }
 }
 
@@ -116,48 +94,17 @@ static char status[1];
 ssize_t ret_val;
 
 /*  Thread function for timer */
-=======
-	    usleep(50000);
-	    //printf("Reading data = %x %x %x %x\n", data[3],data[2],data[1],data[0]);
-		
-	    uint32_t result_data = data[3]<<24 | data[2]<<16 | data[1]<<8 | data[0] ;
-	
-	    printf("Data from distance sensor = %x\n",result_data);
-
-        /** door is opened */
-        if(result_data > THRESHOLD)
-	    {
-            door_opened = 0xff;
-	        pthread_exit(NULL);
-        }
-    }
-}
-
-static char status[1];
-ssize_t ret_val;
-
-/**  Thread function for timer*/
->>>>>>> ff383188ece03beee3e609089298645adbeec89a
 void* timer_run(void* arg)
 {
     write(timer_fd, message_for_TIMER_start, strlen("start"));
     usleep(50000);
     
-<<<<<<< HEAD
     while(time_is_up != 0xff && cancel_timer != 0xff) /* sve dok vrijeme nije isteklo ili sve dok timer nije cancelovan */
     {
 	    ret_val = read(timer_fd, status, 1);
 	
 	    if(status[0]==0x00000000) time_is_up = 0xff;    /* 30secs have expired. Timer has counted down to 0 */
 	    if(status[0]==0x00000010) cancel_timer = 0xff;  /* Timer is stopped by user. Timer hasnt exceeded 0 */
-=======
-    while(time_is_up != 0xff && cancel_timer != 0xff)
-    {
-	    ret_val = read(timer_fd, status, 1);
-	
-	    if(status[0]==0x00000000) time_is_up   = 0xff;    /** 30secs have expired. Timer has counted down to 0 */
-	    if(status[0]==0x00000010) cancel_timer = 0xff;    /** Timer is stopped by user. Timer hasnt exceeded 0 */
->>>>>>> ff383188ece03beee3e609089298645adbeec89a
 	
 	    usleep(50000);
     }
@@ -167,14 +114,10 @@ void* timer_run(void* arg)
 /** Main thread */
 int main(void)
 {
-<<<<<<< HEAD
     /* Nit za ocitavanje sa senzora */
     pthread_t sensor_thread;
 
     /* Nit za tajmer*/
-=======
-    pthread_t sensor_thread;
->>>>>>> ff383188ece03beee3e609089298645adbeec89a
     pthread_t timer_thread;
 	
     char sifra[BUF_LEN]="";
@@ -193,7 +136,6 @@ int main(void)
         return -1;
     }
 
-<<<<<<< HEAD
     /* Kreiramo i pokrecemo nit koja je zaduzena za ocitavanje vrijednosti sa senzora */
     pthread_create(&sensor_thread, NULL, sensor_run, NULL);
 
@@ -212,23 +154,8 @@ int main(void)
 	        while(time_is_up != 0xff)
 	        {
 				/* Unos sifre */
-=======
-    pthread_create(&sensor_thread, NULL, sensor_run, NULL);     /** Creates and runs the sensor thread */
-
-    while(1){
-    
-        /* Someone has entered the room, activate security procedure */
-	    if (door_opened == 0xff){
-			
-	    write(led_fd, message_for_YELLOW_LED, BUF_LEN);
-	    pthread_create(&timer_thread, NULL, timer_run, NULL);  /** Creates and runs the timer thread */
-	
-	    while(time_is_up != 0xff)
-	    {
-				/* Enter the password */
->>>>>>> ff383188ece03beee3e609089298645adbeec89a
 				printf("Unesite sifru: ");
-				/* scanf("%s",sifra); */
+                
                 int available_poll = input_available_poll(30000);
 
                 if(available_poll > 0)
@@ -236,7 +163,6 @@ int main(void)
                     fgets(sifra, BUF_LEN, stdin); /* dodajem fgets umjesto scanf*/
                     sifra[strcspn(sifra, "\n")] = '\0'; 
 				
-<<<<<<< HEAD
 				    if( (strcmp(sifra,PASSWORD) == 0) && (time_is_up != 0xff) ) /* Ako je sifra ispravna i vrijeme nije isteklo */
                     { 
 					    write(led_fd, message_for_GREEN_LED, BUF_LEN);
@@ -265,22 +191,6 @@ int main(void)
         }
 	    if (cancel_timer == 0xff)
         { 
-=======
-				if( (strcmp(sifra,PASSWORD) == 0) && (time_is_up != 0xff) ){        /** correct password on time */
-					write(led_fd, message_for_GREEN_LED, BUF_LEN);
-					cancel_timer = 0xff;
-					break;
-				}
-				else if ((strcmp(sifra,PASSWORD) != 0) && (time_is_up != 0xff)){    /** wrong password on time */
-					write(buzz_fd, message_for_BUZZER, BUF_LEN);
-					write(led_fd, message_for_RED_LED, BUF_LEN);
-				}
-	    }
-	    printf("time_is_up   = %x\n",time_is_up);
-	    printf("cancel_timer = %x\n",cancel_timer);
-	    
-	    if (cancel_timer == 0xff){ 
->>>>>>> ff383188ece03beee3e609089298645adbeec89a
 		    write(timer_fd, message_for_TIMER_stop, strlen("stop"));
 		    break;
 	    }
@@ -289,11 +199,6 @@ int main(void)
 	    {
 	        write(buzz_fd, message_for_BUZZER, strlen(message_for_BUZZER));
 		    write(led_fd, message_for_RED_LED, BUF_LEN);
-<<<<<<< HEAD
-		    break;
-	    }
-        
-=======
 		
 		    /** snapshoot - run camera */
 		    int ret = system("./camera_run.sh");
@@ -308,7 +213,6 @@ int main(void)
 	    }
 	}
 		
->>>>>>> ff383188ece03beee3e609089298645adbeec89a
     }
 	pthread_join(sensor_thread, NULL);
 	pthread_join(timer_thread, NULL);
@@ -339,11 +243,7 @@ void kill_handler(int signo, siginfo_t *info, void *context)
         close(led_fd);
         close(buzz_fd);
         close(adc_fd);
-<<<<<<< HEAD
-	close(timer_fd);
-=======
 	    close(timer_fd);
->>>>>>> ff383188ece03beee3e609089298645adbeec89a
         exit(1);
     }
 }
