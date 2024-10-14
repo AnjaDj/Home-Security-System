@@ -17,7 +17,7 @@
 #include <asm/uaccess.h>
 
 MODULE_LICENSE("Dual BSD/GPL");
-MODULE_AUTHOR("Ana V.");
+MODULE_AUTHOR("Ana V., Dejana S., Anja Dj.");
 MODULE_DESCRIPTION("Timer Driver");
 MODULE_VERSION("2.0");
 
@@ -568,6 +568,7 @@ static ssize_t gpio_driver_read(struct file *filp, char *buf, size_t len, loff_t
             //status[1] = 0x00000000;
             status[0] = 0x00000001;
             printk(KERN_INFO "Timer is still counting. status: %s\n", status);
+            printk(KERN_INFO "vrijeme: %d\n", vrijeme);
         }
         else if (running == 0 && vrijeme > 0) /* Timer is stopped by user. Timer hasnt exceeded 0. */
         { 
