@@ -11,5 +11,7 @@ Raspberry Pi Camera Rev 1.3 : <ul>
 </ul>
 Guide for setting up camera : https://community.element14.com/products/devtools/technicallibrary/m/files/16122 <br>
 
+***
+
 ![RPi-3B-pinout](https://github.com/user-attachments/assets/6c31e84d-7c12-451d-9901-d88d54a74b8b)
 _**Picture 1.** Raspberry Pi 3B pinout_
