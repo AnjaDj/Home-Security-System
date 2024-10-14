@@ -236,6 +236,7 @@ int open_drivers(void)
 	return 0;
 }
 
+
 void kill_handler(int signo, siginfo_t *info, void *context)
 {
     if(signo == SIGINT)
