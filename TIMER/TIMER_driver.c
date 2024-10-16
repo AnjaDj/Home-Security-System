@@ -17,7 +17,7 @@
 #include <asm/uaccess.h>
 
 MODULE_LICENSE("Dual BSD/GPL");
-MODULE_AUTHOR("Ana V., Dejana S., Anja Dj.");
+MODULE_AUTHOR("Ana V.");
 MODULE_DESCRIPTION("Timer Driver");
 MODULE_VERSION("2.0");
 
@@ -412,12 +412,13 @@ static enum hrtimer_restart blink_timer_callback(struct hrtimer *param)
             hrtimer_forward(&blink_timer, ktime_get(), kt);
             return HRTIMER_RESTART;  
         }
-        else if (vrijeme == 0) // 30secs have expired
+        else if (vrijeme <= 0) // 30secs have expired
         {
+            vrijeme=30;
             running = 0;
             time_expired = 1;
             printk(KERN_INFO "30secs have expired.\n");
-            return HRTIMER_NORESTART;
+            return HRTIMER_RESTART;
         }
     }
     
@@ -561,6 +562,9 @@ static ssize_t gpio_driver_read(struct file *filp, char *buf, size_t len, loff_t
         {
             //status[1] = 0x00000000;
             status[0] = 0x00000000;
+            time_expired=0;
+            running=0;
+            vrijeme=0;
             printk(KERN_INFO "Timer expired status: %s\n", status);
         }
         else if(running == 1 && vrijeme > 0) /* Timer still counting */
@@ -578,7 +582,7 @@ static ssize_t gpio_driver_read(struct file *filp, char *buf, size_t len, loff_t
         }
         
         /* Size of valid data in gpio_driver - data to send in user space. */
-        int data_size = 0;
+        int data_size = sizeof(status);
         
         /* Send data to user space. */
         if (copy_to_user(buf, status, 1) != 0)
@@ -624,6 +628,7 @@ static ssize_t gpio_driver_write(struct file *filp, const char *buf, size_t len,
             {
                 vrijeme = 30;
                 running = 1;
+                time_expired=0;
                 printk(KERN_INFO "Timer has been started for the first time.\n");
                 hrtimer_start(&blink_timer, kt, HRTIMER_MODE_REL);
             }
@@ -635,6 +640,7 @@ static ssize_t gpio_driver_write(struct file *filp, const char *buf, size_t len,
             {
                 printk(KERN_INFO "User has stopped timer.\n");
                 running = 0; //STOP TIMER
+                time_expired=0;
             }
         }
         else{

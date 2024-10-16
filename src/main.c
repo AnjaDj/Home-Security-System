@@ -35,6 +35,8 @@
 #include <time.h>
 #include <stdint.h>
 #include <poll.h>
+#include "../CAMERA/camera.c"
+
 
 #define PASSWORD "1234"
 #define BUF_LEN 20
@@ -46,13 +48,15 @@ const char* message_for_BUZZER      = "10";
 const char* message_for_TIMER_start = "start";
 const char* message_for_TIMER_stop  = "stop";
 
+pthread_mutex_t lock;
+
 volatile uint8_t door_opened = 0x00;   /** Flag to indicate when sensor has detected an object  - door is opened  */
 volatile uint8_t cancel_timer= 0x00;   /** Flag to indicate user has stopped the timer - correct password entered */
 volatile uint8_t time_is_up  = 0x00;   /** Flag to indicate timer has counted 30secs and correct password wasnt entered */
 
 /** Paths to char driver files */
 const char* LED_DRIVER   = "/dev/LED_driver";
-const char* BUZZ_DRIVER  = "/dev/BUZZER_driver";
+const char* BUZZ_DRIVER  = "/dev/BUZZ_driver";
 const char* ADC_DRIVER   = "/dev/ADC_driver";
 const char* TIMER_DRIVER = "/dev/TIMER_driver";
 
@@ -79,13 +83,16 @@ void* sensor_run(void* arg)
 			
 	    uint32_t result_data = data[3]<<24 | data[2]<<16 | data[1]<<8 | data[0] ; /* Kombinovanje 4 bajta u 32-bitni rezultat */
 	
-	    printf("Data from distance sensor = %x\n",result_data);
+	    //printf("Data from distance sensor = %x\n",result_data);
 
         if(result_data > THRESHOLD)		/* Detektovali smo otvaranje ulaznih vrata */
-	        {
-                door_opened = 0xff;
-	            pthread_exit(NULL);
-            }
+	{
+	    pthread_mutex_lock(&lock);
+	    door_opened = 0xff;
+	    pthread_mutex_unlock(&lock);
+	    pthread_exit(NULL);
+	    printf("Otvaranje ulaznih vrata!\n");
+	}
     }
 }
 
@@ -101,14 +108,30 @@ void* timer_run(void* arg)
     
     while(time_is_up != 0xff && cancel_timer != 0xff) /* sve dok vrijeme nije isteklo ili sve dok timer nije cancelovan */
     {
-	    ret_val = read(timer_fd, status, 1);
+	ret_val = read(timer_fd, status, 1);
 	
-	    if(status[0]==0x00000000) time_is_up = 0xff;    /* 30secs have expired. Timer has counted down to 0 */
-	    if(status[0]==0x00000010) cancel_timer = 0xff;  /* Timer is stopped by user. Timer hasnt exceeded 0 */
+	pthread_mutex_lock(&lock);
+	if(status[0]==0x00000000) time_is_up = 0xff;    /* 30secs have expired. Timer has counted down to 0 */
+	if(status[0]==0x00000010) cancel_timer = 0xff;  /* Timer is stopped by user. Timer hasnt exceeded 0 */
+	pthread_mutex_unlock(&lock);
 	
-	    usleep(50000);
+	usleep(50000);
     }
     pthread_exit(NULL);
+}
+
+/*  poll funkcija koja ce osigurati da se ceka na unos
+    samo u toku 30 sekundi i nece blokirati app ;
+    * timeout - polling time 
+*/
+
+int input_available_poll(int timeout) 
+{
+    struct pollfd fds;
+    fds.fd = STDIN_FILENO;
+    fds.events = POLLIN;
+
+    return poll(&fds, 1, timeout);
 }
 
 /** Main thread */
@@ -119,7 +142,9 @@ int main(void)
 
     /* Nit za tajmer*/
     pthread_t timer_thread;
-	
+    
+    pthread_mutex_init(&lock, NULL);
+    
     char sifra[BUF_LEN]="";
 	
     /* SIGINT handler function, closes driver files */
@@ -142,81 +167,84 @@ int main(void)
     while(1)
     {
         /* Neko je usao u prostoriju, pokrece se sigurnosna procedura */
-	    if (door_opened == 0xff)
-        {
+	if (door_opened == 0xff)
+	{
 			
-	        write(led_fd, message_for_YELLOW_LED, BUF_LEN);
-			
-	        /* Kreiramo i pokrecemo tajmersku nit */
-	        pthread_create(&timer_thread, NULL, timer_run, NULL);
+	    write(led_fd, message_for_YELLOW_LED, BUF_LEN);
+		
+	    
+	    /* Kreiramo i pokrecemo tajmersku nit */
+	    pthread_create(&timer_thread, NULL, timer_run, NULL);
 	
-	        /* dok vrijeme nije isteklo */
-	        while(time_is_up != 0xff)
-	        {
-				/* Unos sifre */
-				printf("Unesite sifru: ");
-                
-                int available_poll = input_available_poll(30000);
+	    /* dok vrijeme nije isteklo */
+	    while(time_is_up != 0xff)
+	    {
+		/* Unos sifre */
+		printf("Unesite sifru: ");
+		fflush(stdout);
+  
+		int available_poll = input_available_poll(30000);
+		
+		if(available_poll > 0)
+		{
+		    fgets(sifra, BUF_LEN, stdin); /* dodajem fgets umjesto scanf*/
+		    sifra[strcspn(sifra, "\n")] = '\0'; 
+		    
+		    if( (strcmp(sifra,PASSWORD) == 0) && (time_is_up != 0xff) ) /* Ako je sifra ispravna i vrijeme nije isteklo */
+		    { 
+			write(led_fd, message_for_GREEN_LED, BUF_LEN);
+			cancel_timer = 0xff;
+			printf("Ispravna sifra \n");
+			break;
+		    }
+		    else if ((strcmp(sifra,PASSWORD) != 0) && (time_is_up != 0xff))
+		    {	
+			/* Unesena neispravna sifra i vrijeme nije isteklo */
+			write(buzz_fd, message_for_BUZZER, BUF_LEN);
+			write(led_fd, message_for_RED_LED, BUF_LEN);
+			printf("Neispravna sifra \n");
+						
 
-                if(available_poll > 0)
-                {
-                    fgets(sifra, BUF_LEN, stdin); /* dodajem fgets umjesto scanf*/
-                    sifra[strcspn(sifra, "\n")] = '\0'; 
-				
-				    if( (strcmp(sifra,PASSWORD) == 0) && (time_is_up != 0xff) ) /* Ako je sifra ispravna i vrijeme nije isteklo */
-                    { 
-					    write(led_fd, message_for_GREEN_LED, BUF_LEN);
-					    cancel_timer = 0xff;
-					    break;
-				    }
-				    else if ((strcmp(sifra,PASSWORD) != 0) && (time_is_up != 0xff))
-                    {	
-                        /* Unesena neispravna sifra i vrijeme nije isteklo */
-					    write(buzz_fd, message_for_BUZZER, BUF_LEN);
-					    write(led_fd, message_for_RED_LED, BUF_LEN);
-				    }
-                }
-                else if(available_poll == 0)
-                {
-                    printf("Vrijeme za unos lozinke [30 sekundi] je isteklo! \n");
-                    time_is_up = 0xff;
-                    break;
-                }
-                else
-                {
-                    printf("Desila se greska kod poll funkcije! \n");
-                    break;
-                }
-	        }
-        }
-	    if (cancel_timer == 0xff)
-        { 
-		    write(timer_fd, message_for_TIMER_stop, strlen("stop"));
+		    }
+		}
+		else if(available_poll == 0)
+		{
+		    printf("Vrijeme za unos lozinke [30 sekundi] je isteklo! \n");
+		    time_is_up = 0xff;
 		    break;
+		}
+		else
+		{
+		    printf("Desila se greska kod poll funkcije! \n");
+		    break;
+		}
+
+	    }
+	    /*		
+	    printf("time_is_up   = %x\n",time_is_up);
+	    printf("cancel_timer = %x\n",cancel_timer);
+	    */
+	    if (cancel_timer == 0xff)
+	    { 
+		write(timer_fd, message_for_TIMER_stop, strlen("stop"));
+		break;
 	    }
 	    
 	    if (time_is_up == 0xff)
 	    {
-	        write(buzz_fd, message_for_BUZZER, strlen(message_for_BUZZER));
-		    write(led_fd, message_for_RED_LED, BUF_LEN);
-		
-		    /** snapshoot - run camera */
-		    int ret = system("./camera_run.sh");
-		
-		    if (ret < 0){
-		        printf("Greska prilikom pozivanja skripte camera_run.sh\n");
-		    }else{
-		        printf("Skripta camera_run.sh pozvana\n");
-		    }
-		
-		    break;
+		char filename[]= "/home/rpi/Desktop/integracija/image1.jpg";
+		write(buzz_fd, message_for_BUZZER, strlen(message_for_BUZZER));
+		write(led_fd, message_for_RED_LED, BUF_LEN);
+		takePic(filename);
+		printf("Image successuful...\n");
+		break;
 	    }
 	}
-		
     }
-	pthread_join(sensor_thread, NULL);
-	pthread_join(timer_thread, NULL);
-	printf("main exit\n");
+		
+    pthread_mutex_destroy(&lock);
+    pthread_join(sensor_thread, NULL);
+    pthread_join(timer_thread, NULL);
     return 0;
 }
 
@@ -249,17 +277,3 @@ void kill_handler(int signo, siginfo_t *info, void *context)
     }
 }
 
-
-/*  poll funkcija koja ce osigurati da se ceka na unos
-    samo u toku 30 sekundi i nece blokirati app ;
-    * timeout - polling time 
-*/
-
-int input_available_poll(int timeout) 
-{
-    struct pollfd fds[1];
-    fds[0].fd = STDIN_FILENO;
-    fds[0].events = POLL_IN;
-
-    return poll(fds, 1, timeout);
-}

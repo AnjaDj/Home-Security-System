@@ -7,8 +7,19 @@ static pid_t pid = 0;
 
 void takePic (char* filename)
 {
-        //ako je povratna vrijednost fork()=0, nalazimo se u child procesu
+        /*ako je povratna vrijednost fork()=0, nalazimo se u child procesu*/
         if((pid = fork()) == 0){
+                /* Redirecting stdout and stderr into /dev/null so information of taking picture 
+                   is not displayed in terminal*/ 
+                int fd = open("/dev/null", O_WRONLY);
+                if(fd != -1)
+		{
+		    dup2(fd, STDOUT_FILENO);
+		    dup2(fd, STDERR_FILENO);
+                    close(fd);
+                    
+                }
+	    
                 execl("/usr/bin/rpicam-still",
                         "/usr/bin/rpicam-still",
                         "-n",
