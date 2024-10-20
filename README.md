@@ -5,7 +5,7 @@ However, if the time expires without a valid password, the system activates ALAR
 Datasheets 📄: <br>
 BCM2837 Datasheet : https://www.alldatasheet.com/datasheet-pdf/pdf/1572343/BOARDCOM/BCM2837.html <br>
 ADC 12 Click Mikroe : https://www.mikroe.com/adc-12-click?srsltid=AfmBOopHdVjXTjusoUrr0BsAWu4COvaQ-Fox8xVBRag2l970xT6AKSI3 <br>
-Raspberry Pi Camera Rev 1.3 : <ul>
+Raspberry Pi Camera Rev 1.3 :
 <li>https://www.raspberrypi.com/documentation/accessories/camera.html (hardware)    </li>                                                        
 <li>https://www.raspberrypi.com/documentation/computers/camera_software.html (software) </li>
 </ul>
