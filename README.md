@@ -5,4 +5,4 @@ However, if the time expires without a valid password, the system activates outp
 
 
 For more detailed informations about each used modul and hardware, visit our Wiki 📜 page. <br>
-For source code written in C, switch to our development branch 🔧 : <br>
+For source code written in C, switch to our development 🔧 branch
